@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: finance-fo-backend
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm install && npm run prisma:generate && npm run build
+    startCommand: npm run prisma:migrate:deploy && npm run prisma:seed && npm run start:prod
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: api/v1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finance-fo-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: finance-fo-redis
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL
+        value: 7d
+      - key: APP_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: true
+      - key: MAX_ATTACHMENT_SIZE_BYTES
+        value: 5242880
+
+  - type: redis
+    name: finance-fo-redis
+    plan: starter
+    ipAllowList: []
+
+databases:
+  - name: finance-fo-postgres
+    plan: basic-256mb
