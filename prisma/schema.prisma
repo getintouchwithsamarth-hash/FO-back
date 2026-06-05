@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DELETED
+}
+
+enum PlatformRole {
+  USER
+  SUPER_ADMIN
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  REMOVED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+  BANK_TRANSFER
+  UPI
+  WALLET
+  OTHER
+}
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum AttachmentEntityType {
+  EXPENSE
+  INVOICE
+  QUOTE
+  REPORT
+}
+
+enum ReportType {
+  EXPENSES_CSV
+  EXPENSES_PDF
+  ANALYTICS_PDF
+  TAX_SUMMARY_CSV
+}
+
+enum ReportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  passwordHash       String
+  fullName           String
+  avatarUrl          String?
+  status             UserStatus           @default(ACTIVE)
+  platformRole       PlatformRole         @default(USER)
+  lastLoginAt        DateTime?
+  refreshTokenHash   String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  memberships        OrganizationMember[]
+  expenses           Expense[]
+  attachments        Attachment[]
+  reports            Report[]
+  auditLogs          AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  adminEvents        AdminEvent[]         @relation("AdminActor")
+}
+
+model Organization {
+  id                 String               @id @default(cuid())
+  name               String
+  slug               String               @unique
+  logoUrl            String?
+  defaultCurrency    String
+  subscriptionStatus SubscriptionStatus   @default(TRIAL)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  members            OrganizationMember[]
+  expenses           Expense[]
+  categories         ExpenseCategory[]
+  tags               ExpenseTag[]
+  attachments        Attachment[]
+  reports            Report[]
+  auditLogs          AuditLog[]
+  featureFlags       FeatureFlag[]
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MembershipRole
+  status         MembershipStatus @default(ACTIVE)
+  invitedById    String?
+  joinedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  user           User             @relation(fields: [userId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Expense {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  createdByUserId    String
+  categoryId         String?
+  currencyRateId     String?
+  title              String
+  description        String?
+  vendorName         String?
+  amount             Decimal             @db.Decimal(18, 2)
+  currency           String
+  convertedAmount    Decimal             @db.Decimal(18, 2)
+  baseCurrency       String
+  exchangeRate       Decimal             @db.Decimal(18, 6)
+  expenseDate        DateTime
+  paymentMethod      PaymentMethod
+  isRecurring        Boolean             @default(false)
+  recurringFrequency RecurringFrequency?
+  notes              String?
+  status             ExpenseStatus       @default(DRAFT)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+  organization       Organization        @relation(fields: [organizationId], references: [id])
+  createdBy          User                @relation(fields: [createdByUserId], references: [id])
+  category           ExpenseCategory?    @relation(fields: [categoryId], references: [id])
+  currencyRate       CurrencyRate?       @relation(fields: [currencyRateId], references: [id])
+  tags               ExpenseTagLink[]
+
+  @@index([organizationId, expenseDate, status])
+  @@index([organizationId, categoryId])
+}
+
+model ExpenseCategory {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  icon           String?
+  color          String?
+  type           String?
+  isDefault      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  expenses       Expense[]
+
+  @@unique([organizationId, name])
+}
+
+model ExpenseTag {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  links          ExpenseTagLink[]
+
+  @@unique([organizationId, name])
+}
+
+model ExpenseTagLink {
+  expenseId String
+  tagId     String
+  expense   Expense    @relation(fields: [expenseId], references: [id])
+  tag       ExpenseTag @relation(fields: [tagId], references: [id])
+
+  @@id([expenseId, tagId])
+}
+
+model Attachment {
+  id               String               @id @default(cuid())
+  organizationId   String
+  uploadedByUserId String
+  entityType       AttachmentEntityType
+  entityId         String?
+  fileName         String
+  fileType         String
+  fileSize         Int
+  storageKey       String               @unique
+  createdAt        DateTime             @default(now())
+  deletedAt        DateTime?
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  uploadedBy       User                 @relation(fields: [uploadedByUserId], references: [id])
+
+  @@index([organizationId, entityType, entityId])
+}
+
+model CurrencyRate {
+  id             String    @id @default(cuid())
+  baseCurrency   String
+  targetCurrency String
+  rate           Decimal   @db.Decimal(18, 6)
+  provider       String
+  rateDate       DateTime
+  createdAt      DateTime  @default(now())
+  expenses       Expense[]
+
+  @@unique([baseCurrency, targetCurrency, rateDate])
+}
+
+model Report {
+  id              String       @id @default(cuid())
+  organizationId  String
+  createdByUserId String
+  reportType      ReportType
+  filtersJson     Json
+  fileKey         String?
+  status          ReportStatus @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime     @default(now())
+  completedAt     DateTime?
+  deletedAt       DateTime?
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdBy       User         @relation(fields: [createdByUserId], references: [id])
+
+  @@index([organizationId, status, reportType])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadataJson   Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, action, createdAt])
+}
+
+model AdminEvent {
+  id          String   @id @default(cuid())
+  adminUserId String
+  action      String
+  targetType  String
+  targetId    String?
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  adminUser   User     @relation("AdminActor", fields: [adminUserId], references: [id])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model BackgroundJob {
+  id             String    @id @default(cuid())
+  organizationId String?
+  type           String
+  payloadJson    Json
+  status         JobStatus @default(PENDING)
+  attempts       Int       @default(0)
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  @@index([status, type])
+}
+
+model FeatureFlag {
+  key            String       @id
+  organizationId String?
+  enabled        Boolean      @default(false)
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
