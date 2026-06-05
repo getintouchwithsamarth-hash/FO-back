@@ -1,0 +1,23 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - heading "Finance Manager" [level=1] [ref=e6]
+    - paragraph [ref=e7]: Sign in to your workspace
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: Email
+        - textbox "you@company.com" [active] [ref=e12]: demo@finance.local
+      - generic [ref=e13]:
+        - generic [ref=e14]: Password
+        - textbox "••••••••" [ref=e15]: DemoPass123!
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - checkbox "Remember me" [checked] [ref=e18]
+          - text: Remember me
+        - link "Forgot password?" [ref=e19] [cursor=pointer]:
+          - /url: /forgot-password
+      - button "Sign in" [ref=e20]
+    - generic [ref=e21]:
+      - text: Need a workspace?
+      - link "Create one" [ref=e22] [cursor=pointer]:
+        - /url: /register

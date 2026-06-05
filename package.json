@@ -6,9 +6,10 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "start": "node dist/src/main.js",
+    "start": "npm run prisma:migrate:deploy && npm run prisma:seed && npm run start:app",
+    "start:app": "node dist/src/main.js",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/src/main.js",
+    "start:prod": "npm run prisma:migrate:deploy && npm run prisma:seed && npm run start:app",
     "db:up": "docker compose up -d postgres redis minio",
     "db:down": "docker compose down",
     "db:setup": "npm run prisma:generate && npm run prisma:migrate:dev -- --name init && npm run prisma:seed",
