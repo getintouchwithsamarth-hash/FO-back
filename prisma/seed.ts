@@ -37,9 +37,10 @@ async function main() {
   });
 
   const user = await prisma.user.upsert({
-    where: { email: 'demo@finance.local' },
+    where: { username: 'demo' },
     update: {
       username: 'demo',
+      email: 'demo@finance.local',
       passwordHash,
       fullName: 'Demo User',
       deletedAt: null,
@@ -53,9 +54,10 @@ async function main() {
   });
 
   await prisma.user.upsert({
-    where: { email: 'superadmin@finance.local' },
+    where: { username: 'superadmin' },
     update: {
       username: 'superadmin',
+      email: 'superadmin@finance.local',
       passwordHash,
       fullName: 'Platform Super Admin',
       platformRole: PlatformRole.SUPER_ADMIN,
