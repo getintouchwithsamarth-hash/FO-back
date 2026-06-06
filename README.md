@@ -40,8 +40,12 @@ Multi-tenant finance backend built with NestJS, Fastify, Prisma, PostgreSQL, Red
 ### Demo credentials
 
 - Email: `demo@finance.local`
+- Username: `demo`
 - Password: `DemoPass123!`
 - Workspace slug: `demo-workspace`
+- Super admin email: `superadmin@finance.local`
+- Super admin username: `superadmin`
+- Super admin password: `DemoPass123!`
 
 ### Quick commands
 

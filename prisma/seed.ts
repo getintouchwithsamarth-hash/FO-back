@@ -1,10 +1,19 @@
-import { PrismaClient, Prisma, SubscriptionStatus, ExpenseStatus, PaymentMethod, MembershipRole } from '@prisma/client';
+import {
+  PrismaClient,
+  Prisma,
+  SubscriptionStatus,
+  ExpenseStatus,
+  PaymentMethod,
+  MembershipRole,
+  PlatformRole,
+} from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
+const DEFAULT_PASSWORD = 'DemoPass123!';
 
 async function main() {
-  const passwordHash = await bcrypt.hash('DemoPass123!', 10);
+  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
   await prisma.featureFlag.upsert({
     where: { key: 'reports.export.enabled' },
@@ -40,6 +49,24 @@ async function main() {
       email: 'demo@finance.local',
       passwordHash,
       fullName: 'Demo User',
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'superadmin@finance.local' },
+    update: {
+      username: 'superadmin',
+      passwordHash,
+      fullName: 'Platform Super Admin',
+      platformRole: PlatformRole.SUPER_ADMIN,
+      deletedAt: null,
+    },
+    create: {
+      username: 'superadmin',
+      email: 'superadmin@finance.local',
+      passwordHash,
+      fullName: 'Platform Super Admin',
+      platformRole: PlatformRole.SUPER_ADMIN,
     },
   });
 
