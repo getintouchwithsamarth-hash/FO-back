@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -23,6 +24,8 @@ import { UsersRepository } from '@/users/repositories/users.repository';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersRepository: UsersRepository,
     private readonly organizationsRepository: OrganizationsRepository,
@@ -49,26 +52,13 @@ export class AuthService {
 
     const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatches) {
-      await this.auditLogsService.log({
-        action: 'login.failed',
-        entityType: 'user',
-        entityId: user.id,
-        metadata: { username: user.username },
-        ...requestMeta,
-      });
+      await this.logLoginEvent('login.failed', user.id, user.username, requestMeta);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const tokens = await this.issueTokens(user.id, user.username);
-    await this.usersRepository.updateLastLogin(user.id);
-    await this.usersRepository.updateRefreshToken(user.id, await bcrypt.hash(tokens.refreshToken, 10));
-    await this.auditLogsService.log({
-      action: 'login.success',
-      entityType: 'user',
-      entityId: user.id,
-      metadata: { username: user.username },
-      ...requestMeta,
-    });
+    await this.persistLoginState(user.id, tokens.refreshToken);
+    await this.logLoginEvent('login.success', user.id, user.username, requestMeta);
 
     return { user: this.stripSecrets(user), tokens };
   }
@@ -159,6 +149,42 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken };
+  }
+
+  private async persistLoginState(userId: string, refreshToken: string) {
+    try {
+      await this.usersRepository.updateLastLogin(userId);
+      await this.usersRepository.updateRefreshToken(userId, await bcrypt.hash(refreshToken, 10));
+    } catch (error) {
+      this.logger.warn(
+        `Unable to persist login state for user ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private async logLoginEvent(
+    action: 'login.success' | 'login.failed',
+    userId: string,
+    username: string,
+    requestMeta?: { ip?: string; userAgent?: string },
+  ) {
+    try {
+      await this.auditLogsService.log({
+        action,
+        entityType: 'user',
+        entityId: userId,
+        metadata: { username },
+        ...requestMeta,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Unable to write ${action} audit event for user ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private stripSecrets<T extends { passwordHash?: string | null; refreshTokenHash?: string | null }>(
