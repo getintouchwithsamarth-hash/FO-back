@@ -22,12 +22,22 @@ export class ExpensesService {
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
-  list(organizationId: string, query: ExpenseQueryDto) {
-    return this.expensesRepository.findMany(organizationId, query);
+  list(
+    organizationId: string,
+    actor: { id: string; role: MembershipRole },
+    query: ExpenseQueryDto,
+  ) {
+    return this.expensesRepository.findMany(organizationId, actor, query);
   }
 
-  getOne(organizationId: string, id: string) {
-    return this.expensesRepository.findOne(organizationId, id);
+  async getOne(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+  ) {
+    const expense = await this.expensesRepository.findOne(organizationId, id);
+    this.expensesRepository.assertViewable(expense, actor);
+    return expense;
   }
 
   async create(organizationId: string, userId: string, dto: CreateExpenseDto) {

@@ -11,8 +11,21 @@ export class UsersRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  findByUsername(username: string) {
+    return this.prisma.user.findUnique({ where: { username } });
+  }
+
   async findByEmailOrThrow(email: string) {
     const user = await this.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
+  async findByUsernameOrThrow(username: string) {
+    const user = await this.findByUsername(username);
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -41,6 +54,7 @@ export class UsersRepository {
   }
 
   createUserWithWorkspace(input: {
+    username: string;
     email: string;
     passwordHash: string;
     fullName: string;
@@ -51,6 +65,7 @@ export class UsersRepository {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
+          username: input.username,
           email: input.email,
           passwordHash: input.passwordHash,
           fullName: input.fullName,

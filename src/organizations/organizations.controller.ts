@@ -2,7 +2,8 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 
 
 import { CreateOrganizationDto } from './dto/create-organization.dto';
-import { InviteMemberDto } from './dto/invite-member.dto';
+import { CreateMemberDto } from './dto/invite-member.dto';
+import { UpdateMemberCredentialsDto } from './dto/update-member-credentials.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationsService } from './organizations.service';
@@ -55,15 +56,27 @@ export class OrganizationsController {
     return this.organizationsService.listMembers(organizationId);
   }
 
-  @Post(':organizationId/members/invite')
+  @Post(':organizationId/members')
   @UseGuards(OrganizationScopeGuard)
   @Roles({ membership: ['OWNER', 'ADMIN'] })
-  inviteMember(
+  createMember(
     @Param('organizationId') organizationId: string,
-    @Body() dto: InviteMemberDto,
+    @Body() dto: CreateMemberDto,
     @CurrentUser() user: { id: string },
   ) {
-    return this.organizationsService.inviteMember(organizationId, user.id, dto);
+    return this.organizationsService.createMember(organizationId, user.id, dto);
+  }
+
+  @Patch(':organizationId/members/:memberId/credentials')
+  @UseGuards(OrganizationScopeGuard)
+  @Roles({ membership: ['OWNER', 'ADMIN'] })
+  updateMemberCredentials(
+    @Param('organizationId') organizationId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberCredentialsDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.organizationsService.updateMemberCredentials(organizationId, memberId, dto, user.id);
   }
 
   @Patch(':organizationId/members/:memberId/role')

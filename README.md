@@ -21,13 +21,14 @@ Multi-tenant finance backend built with NestJS, Fastify, Prisma, PostgreSQL, Red
 ## Local setup
 
 1. Copy `.env.example` to `.env`.
-2. Start PostgreSQL, Redis, and S3-compatible storage locally.
-3. Set `DATABASE_URL`, `REDIS_URL`, and the S3 env vars in `.env`.
-4. Run `npm install`.
-5. Run `npx prisma generate`.
-6. Run `npx prisma migrate dev --name init`.
-7. Run `npm run prisma:seed`.
-8. Run `npm run start:dev`.
+2. Copy `.env.test.example` to `.env.test` if you want the isolated backend test stack.
+3. Start PostgreSQL, Redis, and S3-compatible storage locally.
+4. Set `DATABASE_URL`, `REDIS_URL`, and the S3 env vars in `.env`.
+5. Run `npm install`.
+6. Run `npx prisma generate`.
+7. Run `npx prisma migrate dev --name init`.
+8. Run `npm run prisma:seed`.
+9. Run `npm run start:dev`.
 
 ### Local dependencies
 
@@ -47,6 +48,26 @@ Multi-tenant finance backend built with NestJS, Fastify, Prisma, PostgreSQL, Red
 - `npm run db:up`: starts the local Docker dependencies if Docker is available
 - `npm run db:setup`: generates Prisma client, migrates, and seeds
 - `npm run build`: production compile check
+- `npm run test:env:up`: starts isolated Postgres, Redis, and MinIO for backend tests
+- `npm run test:integration`: migrates, seeds deterministic fixtures, and runs API integration tests
+- `npm run test:workflow`: runs multi-step backend workflow tests on the same isolated stack
+- `npm run test:ci`: runs the CI backend test gate locally
+
+## Backend testing environment
+
+The repo includes a dedicated backend test stack for deterministic integration coverage.
+
+1. Run `npm run test:env:up`.
+2. Run `npm run test:integration` or `npm run test:workflow`.
+3. Run `npm run test:env:down` when finished.
+
+The test fixtures seed:
+
+- one `Owner`
+- one `Admin`
+- one `Member`
+- one second tenant for isolation checks
+- seeded categories, rates, expenses, reports, and attachments
 
 ## Deployment
 

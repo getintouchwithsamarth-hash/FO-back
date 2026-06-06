@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { MembershipRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
 import { AttachmentsService } from './attachments.service';
@@ -19,35 +20,46 @@ export class AttachmentsController {
 
   @Post('attachments/upload')
   createUpload(
-    @CurrentOrganization() organization: { id: string },
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
     @CurrentUser() user: { id: string },
     @Body() dto: CreateAttachmentUploadDto,
   ) {
     return this.attachmentsService.createUpload(
       organization.id,
       user.id,
+      organization.role,
       dto,
       this.configService.getOrThrow<number>('storage.maxAttachmentSizeBytes'),
     );
   }
 
   @Get('attachments/:id')
-  getOne(@CurrentOrganization() organization: { id: string }, @Param('id') id: string) {
-    return this.attachmentsService.getOne(organization.id, id);
+  getOne(
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+  ) {
+    return this.attachmentsService.getOne(organization.id, id, {
+      id: user.id,
+      role: organization.role,
+    });
   }
 
   @Delete('attachments/:id')
   remove(
-    @CurrentOrganization() organization: { id: string },
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
   ) {
-    return this.attachmentsService.remove(organization.id, id, user.id);
+    return this.attachmentsService.remove(organization.id, id, {
+      id: user.id,
+      role: organization.role,
+    });
   }
 
   @Post('expenses/:id/attachments')
   createExpenseUpload(
-    @CurrentOrganization() organization: { id: string },
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
     @CurrentUser() user: { id: string },
     @Param('id') expenseId: string,
     @Body() dto: CreateAttachmentUploadDto,
@@ -56,6 +68,7 @@ export class AttachmentsController {
       organization.id,
       expenseId,
       user.id,
+      organization.role,
       dto,
       this.configService.getOrThrow<number>('storage.maxAttachmentSizeBytes'),
     );
@@ -63,10 +76,13 @@ export class AttachmentsController {
 
   @Delete('expenses/:id/attachments/:attachmentId')
   removeExpenseAttachment(
-    @CurrentOrganization() organization: { id: string },
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
     @CurrentUser() user: { id: string },
     @Param('attachmentId') attachmentId: string,
   ) {
-    return this.attachmentsService.remove(organization.id, attachmentId, user.id);
+    return this.attachmentsService.remove(organization.id, attachmentId, {
+      id: user.id,
+      role: organization.role,
+    });
   }
 }

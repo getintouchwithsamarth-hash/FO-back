@@ -17,8 +17,12 @@ export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
 
   @Get()
-  list(@CurrentOrganization() organization: { id: string }, @Query() query: ExpenseQueryDto) {
-    return this.expensesService.list(organization.id, query);
+  list(
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
+    @CurrentUser() user: { id: string },
+    @Query() query: ExpenseQueryDto,
+  ) {
+    return this.expensesService.list(organization.id, { id: user.id, role: organization.role }, query);
   }
 
   @Post()
@@ -31,8 +35,12 @@ export class ExpensesController {
   }
 
   @Get(':id')
-  getOne(@CurrentOrganization() organization: { id: string }, @Param('id') id: string) {
-    return this.expensesService.getOne(organization.id, id);
+  getOne(
+    @CurrentOrganization() organization: { id: string; role: MembershipRole },
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+  ) {
+    return this.expensesService.getOne(organization.id, id, { id: user.id, role: organization.role });
   }
 
   @Patch(':id')

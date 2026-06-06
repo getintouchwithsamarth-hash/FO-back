@@ -5,7 +5,6 @@ import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -18,12 +17,8 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  register(
-    @Body() dto: RegisterDto,
-    @Headers('x-forwarded-for') forwardedFor?: string,
-    @Headers('user-agent') userAgent?: string,
-  ) {
-    return this.authService.register(dto, { ip: forwardedFor, userAgent });
+  register() {
+    return this.authService.register();
   }
 
   @Public()

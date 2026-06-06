@@ -4,11 +4,13 @@ import { AnalyticsService } from './analytics.service';
 import { AnalyticsQueryDto } from './dto/analytics-query.dto';
 
 import { CurrentOrganization } from '@/common/decorators/current-organization.decorator';
+import { Roles } from '@/common/decorators/roles.decorator';
 import { OrganizationScopeGuard } from '@/common/guards/organization-scope.guard';
 
 
 @Controller('analytics')
 @UseGuards(OrganizationScopeGuard)
+@Roles({ membership: ['OWNER', 'ADMIN'] })
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

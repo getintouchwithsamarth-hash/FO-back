@@ -11,10 +11,15 @@ import { PrismaService } from '@/prisma/prisma.service';
 export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findMany(organizationId: string, query: ExpenseQueryDto) {
+  async findMany(
+    organizationId: string,
+    actor: { id: string; role: MembershipRole },
+    query: ExpenseQueryDto,
+  ) {
     const where: Prisma.ExpenseWhereInput = {
       organizationId,
       deletedAt: null,
+      createdByUserId: actor.role === MembershipRole.MEMBER ? actor.id : undefined,
       title: query.search
         ? {
             contains: query.search,
@@ -71,6 +76,21 @@ export class ExpensesRepository {
 
     if (!expense) {
       throw new NotFoundException('Expense not found');
+    }
+
+    return expense;
+  }
+
+  assertViewable(
+    expense: { createdByUserId: string },
+    actor: { id: string; role: MembershipRole },
+  ) {
+    if (actor.role !== MembershipRole.MEMBER) {
+      return expense;
+    }
+
+    if (expense.createdByUserId !== actor.id) {
+      throw new ForbiddenException('You cannot view this expense');
     }
 
     return expense;
@@ -159,6 +179,7 @@ export class ExpensesRepository {
     actor: { id: string; role: MembershipRole },
   ) {
     const expense = await this.findOne(organizationId, expenseId);
+    this.assertViewable(expense, actor);
     const canManageAny = ([MembershipRole.OWNER, MembershipRole.ADMIN] as MembershipRole[]).includes(
       actor.role,
     );

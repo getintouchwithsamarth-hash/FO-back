@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { AttachmentEntityType } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { AttachmentEntityType, MembershipRole } from '@prisma/client';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
@@ -25,6 +25,7 @@ export class AttachmentsService {
   async createUpload(
     organizationId: string,
     userId: string,
+    role: MembershipRole,
     dto: CreateAttachmentUploadDto,
     maxSize: number,
   ) {
@@ -59,35 +60,61 @@ export class AttachmentsService {
     organizationId: string,
     expenseId: string,
     userId: string,
+    role: MembershipRole,
     dto: Omit<CreateAttachmentUploadDto, 'entityId' | 'entityType'>,
     maxSize: number,
   ) {
-    await this.expensesRepository.findOne(organizationId, expenseId);
+    await this.expensesRepository.assertEditable(organizationId, expenseId, { id: userId, role });
     return this.createUpload(
       organizationId,
       userId,
+      role,
       { ...dto, entityId: expenseId, entityType: AttachmentEntityType.EXPENSE },
       maxSize,
     );
   }
 
-  async getOne(organizationId: string, id: string) {
+  async getOne(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+  ) {
     const attachment = await this.attachmentsRepository.findOne(organizationId, id);
+    this.assertAccessible(attachment, actor);
     return {
       ...attachment,
       downloadUrl: await this.storageService.createDownloadUrl(attachment.storageKey),
     };
   }
 
-  async remove(organizationId: string, id: string, userId: string) {
+  async remove(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+  ) {
+    const attachment = await this.attachmentsRepository.findOne(organizationId, id);
+    this.assertAccessible(attachment, actor);
     const deleted = await this.attachmentsRepository.softDelete(organizationId, id);
     await this.auditLogsService.log({
       organizationId,
-      userId,
+      userId: actor.id,
       action: 'attachment.deleted',
       entityType: 'attachment',
       entityId: id,
     });
     return deleted;
+  }
+
+  private assertAccessible(
+    attachment: { uploadedByUserId: string },
+    actor: { id: string; role: MembershipRole },
+  ) {
+    if (actor.role === MembershipRole.OWNER || actor.role === MembershipRole.ADMIN) {
+      return;
+    }
+
+    if (attachment.uploadedByUserId !== actor.id) {
+      throw new ForbiddenException('You cannot access this attachment');
+    }
   }
 }

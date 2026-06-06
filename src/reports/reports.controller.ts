@@ -15,7 +15,7 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Post('export')
-  @Roles({ membership: ['OWNER', 'ADMIN', 'MEMBER'] })
+  @Roles({ membership: ['OWNER', 'ADMIN'] })
   create(
     @CurrentOrganization() organization: { id: string },
     @CurrentUser() user: { id: string },
@@ -25,11 +25,13 @@ export class ReportsController {
   }
 
   @Get()
+  @Roles({ membership: ['OWNER', 'ADMIN'] })
   list(@CurrentOrganization() organization: { id: string }) {
     return this.reportsService.list(organization.id);
   }
 
   @Get(':id')
+  @Roles({ membership: ['OWNER', 'ADMIN'] })
   getOne(@CurrentOrganization() organization: { id: string }, @Param('id') id: string) {
     return this.reportsService.getOne(organization.id, id);
   }

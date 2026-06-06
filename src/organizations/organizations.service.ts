@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 
 
 import { CreateOrganizationDto } from './dto/create-organization.dto';
-import { InviteMemberDto } from './dto/invite-member.dto';
+import { CreateMemberDto } from './dto/invite-member.dto';
+import { UpdateMemberCredentialsDto } from './dto/update-member-credentials.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationsRepository } from './repositories/organizations.repository';
@@ -58,20 +59,47 @@ export class OrganizationsService {
     return this.organizationsRepository.listMembers(organizationId);
   }
 
-  async inviteMember(organizationId: string, actorUserId: string, dto: InviteMemberDto) {
-    const member = await this.organizationsRepository.inviteMember(
+  async createMember(organizationId: string, actorUserId: string, dto: CreateMemberDto) {
+    const member = await this.organizationsRepository.createMember(
       organizationId,
       actorUserId,
-      dto.email,
-      dto.role,
+      dto,
     );
     await this.auditLogsService.log({
       organizationId,
       userId: actorUserId,
-      action: 'user.invited',
+      action: 'user.created',
       entityType: 'organization_member',
-      entityId: member.id,
+      entityId: member.member.id,
       metadata: dto as unknown as Prisma.JsonObject,
+    });
+    return member;
+  }
+
+  async updateMemberCredentials(
+    organizationId: string,
+    memberId: string,
+    dto: UpdateMemberCredentialsDto,
+    actorUserId: string,
+  ) {
+    const member = await this.organizationsRepository.updateMemberCredentials(
+      organizationId,
+      memberId,
+      actorUserId,
+      dto,
+    );
+    await this.auditLogsService.log({
+      organizationId,
+      userId: actorUserId,
+      action: 'organization_member.credentials_updated',
+      entityType: 'organization_member',
+      entityId: memberId,
+      metadata: {
+        username: dto.username,
+        email: dto.email,
+        fullName: dto.fullName,
+        passwordUpdated: Boolean(dto.password),
+      },
     });
     return member;
   }
@@ -86,6 +114,7 @@ export class OrganizationsService {
       organizationId,
       memberId,
       dto.role,
+      actorUserId,
     );
     await this.auditLogsService.log({
       organizationId,
@@ -99,7 +128,7 @@ export class OrganizationsService {
   }
 
   async removeMember(organizationId: string, memberId: string, actorUserId: string) {
-    const member = await this.organizationsRepository.removeMember(organizationId, memberId);
+    const member = await this.organizationsRepository.removeMember(organizationId, memberId, actorUserId);
     await this.auditLogsService.log({
       organizationId,
       userId: actorUserId,
