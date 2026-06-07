@@ -7,8 +7,8 @@ WITH normalized AS (
     CASE
       WHEN COALESCE(NULLIF(trim(split_part(COALESCE(email, ''), '@', 1)), ''), '') <> '' THEN
         lower(regexp_replace(split_part(email, '@', 1), '[^a-zA-Z0-9]+', '-', 'g'))
-      WHEN COALESCE(NULLIF(trim(fullName), ''), '') <> '' THEN
-        lower(regexp_replace(fullName, '[^a-zA-Z0-9]+', '-', 'g'))
+      WHEN COALESCE(NULLIF(trim("fullName"), ''), '') <> '' THEN
+        lower(regexp_replace("fullName", '[^a-zA-Z0-9]+', '-', 'g'))
       ELSE
         'user'
     END AS base_username
