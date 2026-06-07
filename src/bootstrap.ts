@@ -31,7 +31,11 @@ export async function configureApp(app: NestFastifyApplication) {
   const maxFileSize = configService.getOrThrow<number>('storage.maxAttachmentSizeBytes');
 
   await app.register(helmet);
-  await app.register(cors, { origin: corsOrigins, credentials: true });
+  await app.register(cors, {
+    origin: corsOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   await app.register(multipart, {
     limits: { fileSize: maxFileSize },
   });

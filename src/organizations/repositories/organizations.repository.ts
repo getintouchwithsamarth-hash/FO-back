@@ -47,6 +47,12 @@ export class OrganizationsRepository {
     });
   }
 
+  createAsPlatformAdmin(data: { name: string; slug: string; defaultCurrency: string }) {
+    return this.prisma.organization.create({
+      data,
+    });
+  }
+
   listByUserId(userId: string) {
     return this.prisma.organizationMember.findMany({
       where: { userId, status: MembershipStatus.ACTIVE, organization: { deletedAt: null } },
@@ -101,6 +107,48 @@ export class OrganizationsRepository {
     return this.prisma.$transaction(async (tx) => {
       const actorMembership = await this.getActiveMembership(tx, organizationId, actorUserId);
       this.assertActorCanManage(actorMembership.role);
+
+      const username = this.normalizeUsername(input.username);
+      await this.assertUsernameAvailable(tx, username);
+      if (input.email) {
+        await this.assertEmailAvailable(tx, input.email);
+      }
+
+      const user = await tx.user.create({
+        data: {
+          username,
+          email: input.email?.trim().toLowerCase() || null,
+          passwordHash: await bcrypt.hash(input.password, 10),
+          fullName: input.fullName?.trim() || input.username,
+          status: UserStatus.ACTIVE,
+        },
+      });
+
+      const member = await tx.organizationMember.create({
+        data: {
+          organizationId,
+          userId: user.id,
+          role: input.role,
+          status: MembershipStatus.ACTIVE,
+          invitedById: actorUserId,
+          joinedAt: new Date(),
+        },
+        include: { user: true },
+      });
+
+      return {
+        member: this.serializeMember(member),
+        credentials: {
+          username,
+          password: input.password,
+        },
+      };
+    });
+  }
+
+  async createMemberAsPlatformAdmin(organizationId: string, actorUserId: string, input: CreateMemberDto) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertOrganizationExists(tx, organizationId);
 
       const username = this.normalizeUsername(input.username);
       await this.assertUsernameAvailable(tx, username);
@@ -245,6 +293,20 @@ export class OrganizationsRepository {
 
   private normalizeUsername(value: string) {
     return value.trim().toLowerCase();
+  }
+
+  private async assertOrganizationExists(tx: PrismaTransaction, organizationId: string) {
+    const organization = await tx.organization.findFirst({
+      where: {
+        id: organizationId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
   }
 
   private async getActiveMembership(tx: PrismaTransaction, organizationId: string, userId: string) {

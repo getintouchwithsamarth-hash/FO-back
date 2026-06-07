@@ -2,9 +2,12 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 
 
 import { AdminService } from './admin.service';
+import { CreateAdminOrganizationDto } from './dto/create-admin-organization.dto';
+import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { UpdateFeatureFlagDto } from './dto/update-feature-flag.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 
 @Controller('admin')
@@ -32,6 +35,11 @@ export class AdminController {
     return this.adminService.listOrganizations();
   }
 
+  @Post('organizations')
+  createOrganization(@Body() dto: CreateAdminOrganizationDto, @CurrentUser() user: { id: string }) {
+    return this.adminService.createOrganization(dto, user.id);
+  }
+
   @Get('organizations/:id')
   getOrganization(@Param('id') id: string) {
     return this.adminService.getOrganization(id);
@@ -40,6 +48,15 @@ export class AdminController {
   @Patch('organizations/:id/status')
   updateOrganizationStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
     return this.adminService.updateOrganizationStatus(id, dto.status);
+  }
+
+  @Post('organizations/:organizationId/users')
+  createOrganizationUser(
+    @Param('organizationId') organizationId: string,
+    @Body() dto: CreateAdminUserDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.adminService.createOrganizationUser(organizationId, dto, user.id);
   }
 
   @Get('audit-logs')
