@@ -12,6 +12,46 @@ import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 const DEFAULT_PASSWORD = 'DemoPass123!';
 
+async function ensureUser(input: {
+  username: string;
+  email: string;
+  fullName: string;
+  passwordHash: string;
+  platformRole?: PlatformRole;
+}) {
+  const existing = await prisma.user.findFirst({
+    where: {
+      OR: [{ username: input.username }, { email: input.email }],
+    },
+  });
+
+  if (existing) {
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        username: input.username,
+        email: input.email,
+        passwordHash: input.passwordHash,
+        fullName: input.fullName,
+        platformRole: input.platformRole ?? PlatformRole.USER,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+    });
+  }
+
+  return prisma.user.create({
+    data: {
+      username: input.username,
+      email: input.email,
+      passwordHash: input.passwordHash,
+      fullName: input.fullName,
+      platformRole: input.platformRole ?? PlatformRole.USER,
+      status: 'ACTIVE',
+    },
+  });
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -36,40 +76,19 @@ async function main() {
     },
   });
 
-  const user = await prisma.user.upsert({
-    where: { username: 'demo' },
-    update: {
-      username: 'demo',
-      email: 'demo@finance.local',
-      passwordHash,
-      fullName: 'Demo User',
-      deletedAt: null,
-    },
-    create: {
-      username: 'demo',
-      email: 'demo@finance.local',
-      passwordHash,
-      fullName: 'Demo User',
-    },
+  const user = await ensureUser({
+    username: 'demo',
+    email: 'demo@finance.local',
+    passwordHash,
+    fullName: 'Demo User',
   });
 
-  await prisma.user.upsert({
-    where: { username: 'superadmin' },
-    update: {
-      username: 'superadmin',
-      email: 'superadmin@finance.local',
-      passwordHash,
-      fullName: 'Platform Super Admin',
-      platformRole: PlatformRole.SUPER_ADMIN,
-      deletedAt: null,
-    },
-    create: {
-      username: 'superadmin',
-      email: 'superadmin@finance.local',
-      passwordHash,
-      fullName: 'Platform Super Admin',
-      platformRole: PlatformRole.SUPER_ADMIN,
-    },
+  await ensureUser({
+    username: 'superadmin',
+    email: 'superadmin@finance.local',
+    passwordHash,
+    fullName: 'Platform Super Admin',
+    platformRole: PlatformRole.SUPER_ADMIN,
   });
 
   await prisma.organizationMember.upsert({
