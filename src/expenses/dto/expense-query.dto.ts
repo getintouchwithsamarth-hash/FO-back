@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { ExpenseStatus, PaymentMethod } from '@prisma/client';
 import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
@@ -25,6 +26,7 @@ export class ExpenseQueryDto extends PaginationQueryDto {
   dateTo?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase() : value))
   @IsEnum(ExpenseStatus)
   status?: ExpenseStatus;
 }

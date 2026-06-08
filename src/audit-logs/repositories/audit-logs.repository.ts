@@ -38,14 +38,26 @@ export class AuditLogsRepository {
   async findMany(query: AuditLogQueryDto, organizationId?: string) {
     const page = query.page;
     const limit = query.limit;
-    const where = {
+    const where: Prisma.AuditLogWhereInput = {
       organizationId,
       action: query.action,
+      entityType: query.entityType,
+      entityId: query.entityId,
     };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.auditLog.findMany({
         where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              fullName: true,
+            },
+          },
+        },
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },

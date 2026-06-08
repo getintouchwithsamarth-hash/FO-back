@@ -33,4 +33,17 @@ export class AuditLogsService {
   list(query: AuditLogQueryDto, organizationId?: string) {
     return this.auditLogsRepository.findMany(query, organizationId);
   }
+
+  listForEntity(entityType: string, entityId: string, organizationId?: string) {
+    return this.auditLogsRepository.findMany(
+      {
+        page: 1,
+        limit: 100,
+        sortOrder: 'desc',
+        entityType,
+        entityId,
+      },
+      organizationId,
+    );
+  }
 }

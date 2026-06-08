@@ -26,6 +26,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: user.email,
       fullName: user.fullName,
       platformRole: user.platformRole,
+      preferredCurrency: user.preferredCurrency,
+      dateFormat: user.dateFormat,
+      numberFormat: user.numberFormat,
     };
   }
 }

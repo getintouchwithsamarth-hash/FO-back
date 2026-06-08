@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ExpenseStatus, MembershipRole, Prisma } from '@prisma/client';
 
 
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { ExpenseDecisionDto } from './dto/expense-decision.dto';
 import { ExpenseQueryDto } from './dto/expense-query.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ExpensesRepository } from './repositories/expenses.repository';
@@ -40,6 +41,16 @@ export class ExpensesService {
     return expense;
   }
 
+  async getHistory(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+  ) {
+    const expense = await this.expensesRepository.findOne(organizationId, id);
+    this.expensesRepository.assertViewable(expense, actor);
+    return this.auditLogsService.listForEntity('expense', id, organizationId);
+  }
+
   async create(organizationId: string, userId: string, dto: CreateExpenseDto) {
     if (dto.categoryId) {
       await this.categoriesRepository.ensureExists(organizationId, dto.categoryId);
@@ -48,7 +59,12 @@ export class ExpensesService {
     const organizationMemberships = await this.organizationsRepository.listByUserId(userId);
     const organization = organizationMemberships.find((membership) => membership.organization.id === organizationId)?.organization;
     const baseCurrency = organization?.defaultCurrency ?? dto.currency;
-    const rateInfo = await this.currencyService.resolveRate(dto.currency, baseCurrency, new Date(dto.expenseDate));
+    const rateInfo = await this.currencyService.resolveRate(
+      dto.currency,
+      baseCurrency,
+      new Date(dto.expenseDate),
+      organizationId,
+    );
 
     const expense = await this.expensesRepository.create(
       organizationId,
@@ -69,6 +85,7 @@ export class ExpensesService {
         isRecurring: dto.isRecurring ?? false,
         recurringFrequency: dto.recurringFrequency,
         status: dto.status ?? ExpenseStatus.DRAFT,
+        approvedAt: dto.status === ExpenseStatus.APPROVED ? new Date() : undefined,
         notes: dto.notes,
       } as Prisma.ExpenseUncheckedCreateInput,
       dto.tagNames,
@@ -92,7 +109,7 @@ export class ExpensesService {
     actor: { id: string; role: MembershipRole },
     dto: UpdateExpenseDto,
   ) {
-    await this.expensesRepository.assertEditable(organizationId, id, actor);
+    const currentExpense = await this.expensesRepository.assertEditable(organizationId, id, actor);
 
     if (dto.categoryId) {
       await this.categoriesRepository.ensureExists(organizationId, dto.categoryId);
@@ -104,7 +121,6 @@ export class ExpensesService {
     let currencyRateId: string | undefined | null;
 
     if (dto.currency || dto.amount || dto.expenseDate) {
-      const currentExpense = await this.expensesRepository.findOne(organizationId, id);
       const org = await this.organizationsRepository.getByIdForUser(organizationId, actor.id);
       const amount = dto.amount ?? Number(currentExpense.amount);
       const currency = dto.currency ?? currentExpense.currency;
@@ -112,6 +128,7 @@ export class ExpensesService {
         currency,
         org.defaultCurrency,
         new Date(dto.expenseDate ?? currentExpense.expenseDate),
+        organizationId,
       );
 
       convertedAmount = new Prisma.Decimal(amount * rateInfo.rate);
@@ -135,6 +152,12 @@ export class ExpensesService {
         isRecurring: dto.isRecurring,
         recurringFrequency: dto.recurringFrequency,
         status: dto.status,
+        approvedAt:
+          dto.status === ExpenseStatus.APPROVED && currentExpense.status !== ExpenseStatus.APPROVED
+            ? new Date()
+            : dto.status && dto.status !== ExpenseStatus.APPROVED
+              ? null
+              : undefined,
         notes: dto.notes,
         convertedAmount,
         exchangeRate,
@@ -153,7 +176,87 @@ export class ExpensesService {
       metadata: dto as unknown as Prisma.JsonObject,
     });
 
-    return expense;
+    if (dto.status && dto.status !== currentExpense.status) {
+      await this.auditLogsService.log({
+        organizationId,
+        userId: actor.id,
+        action: 'expense.status_changed',
+        entityType: 'expense',
+        entityId: id,
+        metadata: {
+          previousStatus: currentExpense.status,
+          nextStatus: dto.status,
+        },
+      });
+    }
+
+    return this.expensesRepository.findOne(organizationId, expense.id);
+  }
+
+  async approve(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+    dto: ExpenseDecisionDto,
+  ) {
+    const expense = await this.expensesRepository.assertApprovable(organizationId, id, actor);
+
+    if (expense.status !== ExpenseStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted expenses can be approved');
+    }
+
+    const updated = await this.expensesRepository.update(organizationId, id, {
+      status: ExpenseStatus.APPROVED,
+      approvedAt: new Date(),
+    });
+
+    await this.auditLogsService.log({
+      organizationId,
+      userId: actor.id,
+      action: 'expense.approved',
+      entityType: 'expense',
+      entityId: id,
+      metadata: {
+        previousStatus: expense.status,
+        nextStatus: ExpenseStatus.APPROVED,
+        reason: dto.reason ?? null,
+      },
+    });
+
+    return this.expensesRepository.findOne(organizationId, updated.id);
+  }
+
+  async reject(
+    organizationId: string,
+    id: string,
+    actor: { id: string; role: MembershipRole },
+    dto: ExpenseDecisionDto,
+  ) {
+    const expense = await this.expensesRepository.assertApprovable(organizationId, id, actor);
+
+    if (expense.status !== ExpenseStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted expenses can be rejected');
+    }
+
+    const updated = await this.expensesRepository.update(organizationId, id, {
+      status: ExpenseStatus.REJECTED,
+      approvedAt: null,
+    });
+
+    await this.auditLogsService.log({
+      organizationId,
+      userId: actor.id,
+      action: 'expense.rejected',
+      entityType: 'expense',
+      entityId: id,
+      metadata: {
+        previousStatus: expense.status,
+        nextStatus: ExpenseStatus.REJECTED,
+        reason: dto.reason ?? null,
+      },
+    });
+
+    return this.expensesRepository.findOne(organizationId, updated.id);
   }
 
   async remove(organizationId: string, id: string, actor: { id: string; role: MembershipRole }) {

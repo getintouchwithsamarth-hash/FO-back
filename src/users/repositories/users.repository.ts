@@ -116,7 +116,16 @@ export class UsersRepository {
     });
   }
 
-  updateProfile(userId: string, data: { fullName?: string; avatarUrl?: string }) {
+  updateProfile(
+    userId: string,
+    data: {
+      fullName?: string;
+      avatarUrl?: string;
+      preferredCurrency?: string;
+      dateFormat?: string;
+      numberFormat?: string;
+    },
+  ) {
     return this.prisma.user.update({
       where: { id: userId },
       data,

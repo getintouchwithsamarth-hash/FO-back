@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ExpenseStatus, Prisma } from '@prisma/client';
 
 import { AnalyticsQueryDto } from './dto/analytics-query.dto';
 
@@ -29,116 +29,199 @@ export class AnalyticsService {
     };
   }
 
-  private async getCurrencyContext(organizationId: string, targetCurrency?: string) {
+  private async getDisplayCurrency(organizationId: string, targetCurrency?: string) {
     const organization = await this.prisma.organization.findUniqueOrThrow({
       where: { id: organizationId },
       select: { defaultCurrency: true },
     });
 
-    const displayCurrency = targetCurrency ?? organization.defaultCurrency;
-    if (displayCurrency === organization.defaultCurrency) {
-      return {
-        baseCurrency: organization.defaultCurrency,
-        displayCurrency,
-        factor: 1,
-      };
+    return targetCurrency ?? organization.defaultCurrency;
+  }
+
+  private getRateFactor(
+    rates: Array<{
+      organizationId?: string | null;
+      baseCurrency: string;
+      targetCurrency: string;
+      rate: Prisma.Decimal;
+      rateDate: Date;
+    }>,
+    fromCurrency: string,
+    toCurrency: string,
+    effectiveAt?: Date | null,
+  ) {
+    if (fromCurrency === toCurrency) {
+      return 1;
     }
 
-    const rateInfo = await this.currencyService.resolveRate(
-      organization.defaultCurrency,
-      displayCurrency,
-      new Date(),
+    const direct = rates.find(
+      (rate) =>
+        rate.baseCurrency === fromCurrency &&
+        rate.targetCurrency === toCurrency &&
+        (!effectiveAt || rate.rateDate <= effectiveAt),
     );
 
-    return {
-      baseCurrency: organization.defaultCurrency,
-      displayCurrency,
-      factor: rateInfo.rate,
-    };
+    if (direct) {
+      return Number(direct.rate);
+    }
+
+    const inverse = rates.find(
+      (rate) =>
+        rate.baseCurrency === toCurrency &&
+        rate.targetCurrency === fromCurrency &&
+        (!effectiveAt || rate.rateDate <= effectiveAt),
+    );
+
+    if (inverse) {
+      return 1 / Number(inverse.rate);
+    }
+
+    return 1;
+  }
+
+  private convertExpenseForDisplay(
+    expense: {
+      baseCurrency: string;
+      convertedAmount: Prisma.Decimal;
+      status: ExpenseStatus;
+      approvedAt: Date | null;
+      expenseDate: Date;
+    },
+    displayCurrency: string,
+    rates: Array<{
+      organizationId?: string | null;
+      baseCurrency: string;
+      targetCurrency: string;
+      rate: Prisma.Decimal;
+      rateDate: Date;
+    }>,
+  ) {
+    const effectiveAt =
+      expense.status === ExpenseStatus.APPROVED ? expense.approvedAt ?? expense.expenseDate : undefined;
+    const factor = this.getRateFactor(rates, expense.baseCurrency, displayCurrency, effectiveAt);
+    return Number(expense.convertedAmount) * factor;
   }
 
   async getOverview(organizationId: string, query: AnalyticsQueryDto) {
     const where = this.buildWhere(organizationId, query);
-    const [summary, groupedCategories, expenseCount, context] = await Promise.all([
-      this.prisma.expense.aggregate({
+    const [expenses, categories, rates, displayCurrency] = await Promise.all([
+      this.prisma.expense.findMany({
         where,
-        _sum: { convertedAmount: true },
-        _avg: { convertedAmount: true },
-      }),
-      this.prisma.expense.groupBy({
-        by: ['categoryId'],
-        where,
-        _sum: { convertedAmount: true },
-        orderBy: {
-          _sum: { convertedAmount: 'desc' },
+        select: {
+          id: true,
+          categoryId: true,
+          convertedAmount: true,
+          baseCurrency: true,
+          status: true,
+          approvedAt: true,
+          expenseDate: true,
         },
-        take: 1,
       }),
-      this.prisma.expense.count({ where }),
-      this.getCurrencyContext(organizationId, query.currency),
+      this.prisma.expenseCategory.findMany({
+        where: { organizationId, deletedAt: null },
+        select: { id: true, name: true },
+      }),
+      this.currencyService.listOrganizationRates(organizationId),
+      this.getDisplayCurrency(organizationId, query.currency),
     ]);
 
-    const topCategory =
-      groupedCategories[0]?.categoryId
-        ? await this.prisma.expenseCategory.findUnique({
-            where: { id: groupedCategories[0].categoryId },
-          })
-        : null;
+    const categoryTotals = new Map<string, number>();
+    let totalExpenses = 0;
+
+    for (const expense of expenses) {
+      const amount = this.convertExpenseForDisplay(expense, displayCurrency, rates);
+      totalExpenses += amount;
+
+      if (expense.categoryId) {
+        categoryTotals.set(expense.categoryId, (categoryTotals.get(expense.categoryId) ?? 0) + amount);
+      }
+    }
+
+    const topCategoryEntry = [...categoryTotals.entries()].sort((left, right) => right[1] - left[1])[0];
+    const topCategory = topCategoryEntry
+      ? categories.find((category) => category.id === topCategoryEntry[0])?.name ?? null
+      : null;
 
     return {
-      totalExpenses: Number(summary._sum.convertedAmount ?? 0) * context.factor,
-      currency: context.displayCurrency,
+      totalExpenses,
+      currency: displayCurrency,
       monthlyChangePercent: 0,
-      topCategory: topCategory?.name ?? null,
-      expenseCount,
-      averageExpense: Number(summary._avg.convertedAmount ?? 0) * context.factor,
+      topCategory,
+      expenseCount: expenses.length,
+      averageExpense: expenses.length ? totalExpenses / expenses.length : 0,
     };
   }
 
   async getMonthlyExpenses(organizationId: string, query: AnalyticsQueryDto) {
-    const rows = (await this.prisma.$queryRaw`
-      SELECT DATE_TRUNC('month', "expenseDate") AS month,
-             SUM("convertedAmount")::float AS total
-      FROM "Expense"
-      WHERE "organizationId" = ${organizationId}
-        AND "deletedAt" IS NULL
-      GROUP BY DATE_TRUNC('month', "expenseDate")
-      ORDER BY month ASC
-    `) as Array<{ month: Date; total: number }>;
+    const where = this.buildWhere(organizationId, query);
+    const [expenses, rates, displayCurrency] = await Promise.all([
+      this.prisma.expense.findMany({
+        where,
+        select: {
+          expenseDate: true,
+          convertedAmount: true,
+          baseCurrency: true,
+          status: true,
+          approvedAt: true,
+        },
+        orderBy: { expenseDate: 'asc' },
+      }),
+      this.currencyService.listOrganizationRates(organizationId),
+      this.getDisplayCurrency(organizationId, query.currency),
+    ]);
 
-    const context = await this.getCurrencyContext(organizationId, query.currency);
-    return rows.map((row) => ({
-      month: row.month.toLocaleString('en-US', { month: 'short' }),
-      amount: row.total * context.factor,
-      currency: context.displayCurrency,
+    const monthlyTotals = new Map<string, number>();
+
+    for (const expense of expenses) {
+      const monthKey = `${expense.expenseDate.getFullYear()}-${String(expense.expenseDate.getMonth() + 1).padStart(2, '0')}`;
+      const amount = this.convertExpenseForDisplay(expense, displayCurrency, rates);
+      monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) ?? 0) + amount);
+    }
+
+    return [...monthlyTotals.entries()].map(([monthKey, amount]) => ({
+      month: new Date(`${monthKey}-01T00:00:00.000Z`).toLocaleString('en-US', { month: 'short' }),
+      amount,
+      currency: displayCurrency,
     }));
   }
 
   async getCategoryBreakdown(organizationId: string, query: AnalyticsQueryDto) {
     const where = this.buildWhere(organizationId, query);
-    const [result, context] = await Promise.all([
-      this.prisma.expense.groupBy({
-        by: ['categoryId'],
+    const [expenses, categories, rates, displayCurrency] = await Promise.all([
+      this.prisma.expense.findMany({
         where,
-        _sum: { convertedAmount: true },
-        orderBy: { _sum: { convertedAmount: 'desc' } },
-      }),
-      this.getCurrencyContext(organizationId, query.currency),
-    ]);
-    const categories = await this.prisma.expenseCategory.findMany({
-      where: {
-        id: {
-          in: result.map((item) => item.categoryId).filter(Boolean) as string[],
+        select: {
+          categoryId: true,
+          convertedAmount: true,
+          baseCurrency: true,
+          status: true,
+          approvedAt: true,
+          expenseDate: true,
         },
-      },
-    });
+      }),
+      this.prisma.expenseCategory.findMany({
+        where: { organizationId, deletedAt: null },
+        select: { id: true, name: true },
+      }),
+      this.currencyService.listOrganizationRates(organizationId),
+      this.getDisplayCurrency(organizationId, query.currency),
+    ]);
 
-    return result.map((item) => ({
-      categoryId: item.categoryId,
-      category: categories.find((category) => category.id === item.categoryId)?.name ?? 'Other',
-      amount: Number(item._sum.convertedAmount ?? 0) * context.factor,
-      currency: context.displayCurrency,
-    }));
+    const categoryTotals = new Map<string | null, number>();
+
+    for (const expense of expenses) {
+      const amount = this.convertExpenseForDisplay(expense, displayCurrency, rates);
+      categoryTotals.set(expense.categoryId, (categoryTotals.get(expense.categoryId) ?? 0) + amount);
+    }
+
+    return [...categoryTotals.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([categoryId, amount]) => ({
+        categoryId,
+        category: categories.find((category) => category.id === categoryId)?.name ?? 'Other',
+        amount,
+        currency: displayCurrency,
+      }));
   }
 
   getPaymentMethodBreakdown(organizationId: string, query: AnalyticsQueryDto) {

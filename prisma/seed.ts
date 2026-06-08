@@ -34,6 +34,9 @@ async function ensureUser(input: {
         passwordHash: input.passwordHash,
         fullName: input.fullName,
         platformRole: input.platformRole ?? PlatformRole.USER,
+        preferredCurrency: 'INR',
+        dateFormat: 'MMM d, yyyy',
+        numberFormat: 'en-IN',
         status: 'ACTIVE',
         deletedAt: null,
       },
@@ -47,6 +50,9 @@ async function ensureUser(input: {
       passwordHash: input.passwordHash,
       fullName: input.fullName,
       platformRole: input.platformRole ?? PlatformRole.USER,
+      preferredCurrency: 'INR',
+      dateFormat: 'MMM d, yyyy',
+      numberFormat: 'en-IN',
       status: 'ACTIVE',
     },
   });
@@ -143,6 +149,7 @@ async function main() {
   );
 
   const today = new Date();
+  const baselineRateDate = new Date('2026-01-01T00:00:00.000Z');
   const ratePairs = [
     ['USD', 'INR', 83.42],
     ['EUR', 'INR', 91.35],
@@ -153,25 +160,34 @@ async function main() {
   ] as const;
 
   await Promise.all(
-    ratePairs.map(([baseCurrency, targetCurrency, rate]) =>
-      prisma.currencyRate.upsert({
+    ratePairs.map(async ([baseCurrency, targetCurrency, rate]) => {
+      const existing = await prisma.currencyRate.findFirst({
         where: {
-          baseCurrency_targetCurrency_rateDate: {
-            baseCurrency,
-            targetCurrency,
-            rateDate: today,
-          },
+          organizationId: null,
+          baseCurrency,
+          targetCurrency,
+          rateDate: baselineRateDate,
         },
-        update: { rate: new Prisma.Decimal(rate) },
-        create: {
+      });
+
+      if (existing) {
+        return prisma.currencyRate.update({
+          where: { id: existing.id },
+          data: { rate: new Prisma.Decimal(rate) },
+        });
+      }
+
+      return prisma.currencyRate.create({
+        data: {
+          organizationId: null,
           baseCurrency,
           targetCurrency,
           rate: new Prisma.Decimal(rate),
           provider: 'seed',
-          rateDate: today,
+          rateDate: baselineRateDate,
         },
-      }),
-    ),
+      });
+    }),
   );
 
   const sampleExpenses = [
@@ -238,25 +254,34 @@ async function main() {
       },
     });
 
-    if (!exists) {
-      await prisma.expense.create({
-        data: {
-          organizationId: organization.id,
-          createdByUserId: user.id,
-          categoryId: category.id,
-          title: sample.title,
-          vendorName: sample.vendorName,
-          amount: new Prisma.Decimal(sample.amount),
-          currency: sample.currency,
-          convertedAmount: new Prisma.Decimal(sample.convertedAmount),
-          baseCurrency: 'INR',
-          exchangeRate: new Prisma.Decimal(sample.exchangeRate),
-          expenseDate: sample.expenseDate,
-          paymentMethod: sample.paymentMethod,
-          status: sample.status,
-        },
-      });
+    if (exists) {
+      if (exists.status === ExpenseStatus.APPROVED && !exists.approvedAt) {
+        await prisma.expense.update({
+          where: { id: exists.id },
+          data: { approvedAt: exists.expenseDate },
+        });
+      }
+      continue;
     }
+
+    await prisma.expense.create({
+      data: {
+        organizationId: organization.id,
+        createdByUserId: user.id,
+        categoryId: category.id,
+        title: sample.title,
+        vendorName: sample.vendorName,
+        amount: new Prisma.Decimal(sample.amount),
+        currency: sample.currency,
+        convertedAmount: new Prisma.Decimal(sample.convertedAmount),
+        baseCurrency: 'INR',
+        exchangeRate: new Prisma.Decimal(sample.exchangeRate),
+        expenseDate: sample.expenseDate,
+        paymentMethod: sample.paymentMethod,
+        status: sample.status,
+        approvedAt: sample.status === ExpenseStatus.APPROVED ? sample.expenseDate : null,
+      },
+    });
   }
 }
 

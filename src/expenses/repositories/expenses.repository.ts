@@ -191,4 +191,21 @@ export class ExpensesRepository {
 
     return expense;
   }
+
+  async assertApprovable(
+    organizationId: string,
+    expenseId: string,
+    actor: { id: string; role: MembershipRole },
+  ) {
+    const expense = await this.findOne(organizationId, expenseId);
+    const canApprove = ([MembershipRole.OWNER, MembershipRole.ADMIN] as MembershipRole[]).includes(
+      actor.role,
+    );
+
+    if (!canApprove) {
+      throw new ForbiddenException('You cannot approve or reject this expense');
+    }
+
+    return expense;
+  }
 }

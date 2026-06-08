@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { ConvertCurrencyDto } from './dto/convert-currency.dto';
+import { UpsertOrganizationCurrencyRatesDto } from './dto/upsert-organization-currency-rates.dto';
 import { CurrencyRepository } from './repositories/currency.repository';
 
 @Injectable()
@@ -13,6 +15,29 @@ export class CurrencyService {
 
   listRates() {
     return this.currencyRepository.getLatestRates();
+  }
+
+  listOrganizationRates(organizationId: string) {
+    return this.currencyRepository.listRatesForOrganization(organizationId);
+  }
+
+  async upsertOrganizationRates(organizationId: string, dto: UpsertOrganizationCurrencyRatesDto) {
+    const rateDate = dto.rateDate ? new Date(dto.rateDate) : new Date();
+
+    return Promise.all(
+      dto.rates
+        .filter((rate) => rate.baseCurrency !== rate.targetCurrency)
+        .map((rate) =>
+          this.currencyRepository.upsertOrganizationRate({
+            organizationId,
+            baseCurrency: rate.baseCurrency,
+            targetCurrency: rate.targetCurrency,
+            rate: new Prisma.Decimal(rate.rate),
+            provider: 'manual',
+            rateDate,
+          }),
+        ),
+    );
   }
 
   async convert(dto: ConvertCurrencyDto) {
@@ -34,12 +59,12 @@ export class CurrencyService {
     };
   }
 
-  async resolveRate(from: string, to: string, expenseDate: Date) {
+  async resolveRate(from: string, to: string, expenseDate: Date, organizationId?: string) {
     if (from === to) {
       return { rate: 1, baseCurrency: to, currencyRateId: null };
     }
 
-    const rate = await this.currencyRepository.findRate(from, to, expenseDate);
+    const rate = await this.currencyRepository.findRate(from, to, expenseDate, organizationId);
     if (!rate) {
       throw new BadRequestException(`Exchange rate missing for ${from}/${to}`);
     }

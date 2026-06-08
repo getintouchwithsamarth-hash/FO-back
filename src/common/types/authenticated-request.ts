@@ -7,6 +7,9 @@ export interface RequestUser {
   email: string | null;
   fullName: string;
   platformRole: PlatformRole;
+  preferredCurrency: string;
+  dateFormat: string;
+  numberFormat: string;
 }
 
 export interface RequestOrganization {
